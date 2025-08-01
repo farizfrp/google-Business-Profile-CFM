@@ -1,23 +1,45 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# Backend - Hide backend from git tracking
+/backend/
+backend/
+
+# Dependencies
+node_modules/
 /node_modules
 /.pnp
 .pnp.js
 
-# testing
+# Testing
 /coverage
 
-# production
+# Production builds
 /build
+/frontend/build
 
-# misc
-.DS_Store
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+server.log
+*.log
+
+# Misc
+.DS_Store
+.vscode/
+.idea/
+
+# Other directories to ignore
+/gmb-review-manager/
