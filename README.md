@@ -41,31 +41,33 @@ The backend directory is intentionally excluded from version control for securit
 
 ### Frontend (React)
 ```bash
-cd frontend
-npm install
-npm start
+# From the project root, run the following script to start both frontend and backend:
+
+npm run dev
+
+# This will concurrently start the frontend (React) and backend (Node.js) servers.
+# Make sure you have installed all dependencies in both `frontend` and `backend` directories first:
+
+cd frontend && npm install
+cd ../backend && npm install
+
+# The `dev` script should be defined in your root `package.json` as:
+# "dev": "concurrently \"npm start --prefix frontend\" \"npm start --prefix backend\""
 ```
 
-### Backend (Node.js)
-```bash
-cd backend
-npm install
-npm start
-```
-
-The backend serves the frontend build files and handles API requests on port 3001.
+The backend serves the frontend build files and handles API requests on port 8011.
 
 ## Environment Variables
 
 Configure these in your backend environment:
 - `GOOGLE_CLIENT_ID` - Your Google OAuth client ID
 - `GOOGLE_CLIENT_SECRET` - Your Google OAuth client secret
-- `REDIRECT_URI` - OAuth redirect URI (default: http://localhost:3001/auth/google/callback)
-- `PORT` - Server port (default: 3001)
+- `REDIRECT_URI` - OAuth redirect URI (default: http://localhost:8011/auth/google/callback)
+- `PORT` - Server port (default: 8011)
 
 ## Production Deployment
 
 For production:
 1. Build the frontend: `cd frontend && npm run build`
 2. The backend will automatically serve the built frontend files
-3. Backend and frontend run on the same port (3001)
+3. Backend and frontend run on the same port (8011)

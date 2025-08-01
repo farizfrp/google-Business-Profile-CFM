@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const { initDatabase, getOrCreateUser, saveTokens, getTokens, updateAccessToken, saveAccounts, getAccounts, saveLocations, getLocations, getAllLocations, updateOutletCode, getAllUsers } = require('./database');
 const app = express();
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 8011;
 
 app.use(cors());
 app.use(express.json());
@@ -22,7 +22,7 @@ initDatabase().then(() => {
 // OAuth 2.0 Configuration
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'your_google_client_id_here';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'your_google_client_secret_here';
-const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:3001/auth/google/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:8011/auth/google/callback';
 const SCOPE = 'https://www.googleapis.com/auth/business.manage openid email profile';
 
 // Helper function to make requests to Google APIs
