@@ -143,11 +143,11 @@ app.get('/auth/google/callback', async (req, res) => {
   const { code, error } = req.query;
   
   if (error) {
-    return res.redirect(`http://localhost:3000/?error=${encodeURIComponent(error)}`);
+    return res.redirect(`https://gbp-cfm.boga.co.id/?error=${encodeURIComponent(error)}`);
   }
   
   if (!code) {
-    return res.redirect(`http://localhost:3000/?error=no_code`);
+    return res.redirect(`https://gbp-cfm.boga.co.id/?error=no_code`);
   }
   
   try {
@@ -201,11 +201,11 @@ app.get('/auth/google/callback', async (req, res) => {
       auto_fetch_success: autoFetchResult.success
     });
     
-    res.redirect(`http://localhost:3000/?${params.toString()}`);
+    res.redirect(`https://gbp-cfm.boga.co.id/?${params.toString()}`);
     
   } catch (error) {
     console.error('OAuth callback error:', error);
-    res.redirect(`http://localhost:3000/?error=${encodeURIComponent('token_exchange_failed')}`);
+    res.redirect(`https://gbp-cfm.boga.co.id/?error=${encodeURIComponent('token_exchange_failed')}`);
   }
 });
 
