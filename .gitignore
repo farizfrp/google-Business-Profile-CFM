@@ -1,8 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # Backend - Hide backend from git tracking
-/backend/
-backend/
+
 
 # Dependencies
 node_modules/
