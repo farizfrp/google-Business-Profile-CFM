@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+require('dotenv').config();
 const { initDatabase, getOrCreateUser, saveTokens, getTokens, updateAccessToken, saveAccounts, getAccounts, saveLocations, getLocations, getAllLocations, updateOutletCode, getAllUsers } = require('./database');
 const app = express();
 const port = process.env.PORT || 8011;
