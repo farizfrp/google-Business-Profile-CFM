@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
-const { initDatabase, getOrCreateUser, saveTokens, getTokens, updateAccessToken, saveAccounts, getAccounts, saveLocations, getLocations, getAllLocations, updateOutletCode, getAllUsers } = require('./database');
+const { db, initDatabase, getOrCreateUser, saveTokens, getTokens, updateAccessToken, saveAccounts, getAccounts, saveLocations, getLocations, getAllLocations, updateOutletCode, getAllUsers } = require('./database');
 const app = express();
 const port = process.env.PORT || 8011;
 
@@ -24,6 +24,7 @@ initDatabase().then(() => {
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'your_google_client_id_here';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'your_google_client_secret_here';
 const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:8011/auth/google/callback';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const SCOPE = 'https://www.googleapis.com/auth/business.manage openid email profile';
 
 // Helper function to make requests to Google APIs
@@ -98,14 +99,16 @@ const autoFetchAccountsAndLocations = async (userId, token) => {
     // Fetch locations for each account
     for (const account of accounts) {
       try {
-        const readMask = 'storeCode,regularHours,name,languageCode,title,phoneNumbers,categories,storefrontAddress,websiteUri,regularHours,specialHours,serviceArea,labels,adWordsLocationExtensions,latlng,openInfo,metadata,profile,relationshipData,moreHours';
-        const locationsData = await makeGoogleAPIRequest(
-          `https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?read_mask=${encodeURIComponent(readMask)}`,
-          token
-        );
+                  const readMask = 'storeCode,name,title,phoneNumbers,labels,storefrontAddress,metadata';
+        
+        // Extract account ID from account.name (removes "accounts/" prefix)
+        const accountId = account.name.replace('accounts/', '');
+        
+        // Use pagination to fetch all locations for this account
+        const locationsData = await fetchAllLocations(accountId, token, readMask);
         
         const locations = locationsData.locations || [];
-        await saveLocations(userId, account.name, locations);
+        await saveLocations(userId, accountId, locations);
       } catch (locationError) {
         console.error(`Error fetching locations for account ${account.name}:`, locationError);
         // Continue with other accounts even if one fails
@@ -144,11 +147,11 @@ app.get('/auth/google/callback', async (req, res) => {
   const { code, error } = req.query;
   
   if (error) {
-    return res.redirect(`https://gbp-cfm.boga.co.id/?error=${encodeURIComponent(error)}`);
+    return res.redirect(`${FRONTEND_URL}/?error=${encodeURIComponent(error)}`);
   }
   
   if (!code) {
-    return res.redirect(`https://gbp-cfm.boga.co.id/?error=no_code`);
+    return res.redirect(`${FRONTEND_URL}/?error=no_code`);
   }
   
   try {
@@ -202,11 +205,11 @@ app.get('/auth/google/callback', async (req, res) => {
       auto_fetch_success: autoFetchResult.success
     });
     
-    res.redirect(`https://gbp-cfm.boga.co.id/?${params.toString()}`);
+    res.redirect(`${FRONTEND_URL}/?${params.toString()}`);
     
   } catch (error) {
     console.error('OAuth callback error:', error);
-    res.redirect(`https://gbp-cfm.boga.co.id/?error=${encodeURIComponent('token_exchange_failed')}`);
+    res.redirect(`${FRONTEND_URL}/?error=${encodeURIComponent('token_exchange_failed')}`);
   }
 });
 
@@ -388,6 +391,39 @@ app.get('/api/accounts/:accountId/locations/stored/:userId', async (req, res) =>
   }
 });
 
+// Helper function to fetch all locations with pagination
+const fetchAllLocations = async (accountId, token, readMask) => {
+  const allLocations = [];
+  let nextPageToken = null;
+  
+  do {
+    let url = `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${accountId}/locations?read_mask=${encodeURIComponent(readMask)}`;
+    
+    // Add pageToken parameter if we have one
+    if (nextPageToken) {
+      url += `&pageToken=${encodeURIComponent(nextPageToken)}`;
+    }
+    
+    const data = await makeGoogleAPIRequest(url, token);
+    
+    // Add locations from this page to our collection
+    if (data.locations) {
+      allLocations.push(...data.locations);
+    }
+    
+    // Update nextPageToken for next iteration
+    nextPageToken = data.nextPageToken || null;
+    
+    console.log(`Fetched ${data.locations ? data.locations.length : 0} locations from page. Total so far: ${allLocations.length}. Next page token: ${nextPageToken ? 'exists' : 'none'}`);
+    
+  } while (nextPageToken);
+  
+  return {
+    locations: allLocations,
+    totalCount: allLocations.length
+  };
+};
+
 // Get Locations (original endpoint - now also stores in DB)
 app.get('/api/accounts/:accountId/locations', async (req, res) => {
   try {
@@ -401,10 +437,8 @@ app.get('/api/accounts/:accountId/locations', async (req, res) => {
     const { accountId } = req.params;
     const readMask = 'storeCode,regularHours,name,languageCode,title,phoneNumbers,categories,storefrontAddress,websiteUri,regularHours,specialHours,serviceArea,labels,adWordsLocationExtensions,latlng,openInfo,metadata,profile,relationshipData,moreHours';
     
-    const data = await makeGoogleAPIRequest(
-      `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${accountId}/locations?read_mask=${encodeURIComponent(readMask)}`,
-      token
-    );
+    // Fetch all locations with pagination
+    const data = await fetchAllLocations(accountId, token, readMask);
     
     // Store locations in database if userId is provided
     if (userId && data.locations) {
@@ -422,6 +456,39 @@ app.get('/api/accounts/:accountId/locations', async (req, res) => {
   }
 });
 
+// Helper function to fetch all reviews with pagination
+const fetchAllReviews = async (accountId, locationId, token) => {
+  const allReviews = [];
+  let nextPageToken = null;
+  
+  do {
+    let url = `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/reviews`;
+    
+    // Add pageToken parameter if we have one
+    if (nextPageToken) {
+      url += `?pageToken=${encodeURIComponent(nextPageToken)}`;
+    }
+    
+    const data = await makeGoogleAPIRequest(url, token);
+    
+    // Add reviews from this page to our collection
+    if (data.reviews) {
+      allReviews.push(...data.reviews);
+    }
+    
+    // Update nextPageToken for next iteration
+    nextPageToken = data.nextPageToken || null;
+    
+    console.log(`Fetched ${data.reviews ? data.reviews.length : 0} reviews from page. Total so far: ${allReviews.length}. Next page token: ${nextPageToken ? 'exists' : 'none'}`);
+    
+  } while (nextPageToken);
+  
+  return {
+    reviews: allReviews,
+    totalCount: allReviews.length
+  };
+};
+
 // Get Reviews
 app.get('/api/accounts/:accountId/locations/:locationId/reviews', async (req, res) => {
   try {
@@ -432,10 +499,8 @@ app.get('/api/accounts/:accountId/locations/:locationId/reviews', async (req, re
 
     const { accountId, locationId } = req.params;
     
-    const data = await makeGoogleAPIRequest(
-      `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/reviews`,
-      token
-    );
+    // Fetch all reviews with pagination
+    const data = await fetchAllReviews(accountId, locationId, token);
     
     res.json(data);
   } catch (error) {
@@ -531,6 +596,225 @@ app.put('/api/locations/outlet-code', async (req, res) => {
   } catch (error) {
     console.error('Error updating outlet code:', error);
     res.status(500).json({ error: 'Failed to update outlet code', details: error.message });
+  }
+});
+
+// Reports Authentication
+app.post('/api/reports/authenticate', (req, res) => {
+  const { password } = req.body;
+  
+  if (password === 'Jakarta2025') {
+    res.json({ success: true, message: 'Authentication successful' });
+  } else {
+    res.status(401).json({ success: false, message: 'Invalid password' });
+  }
+});
+
+// Get all locations for reports (password protected)
+app.get('/api/reports/locations', async (req, res) => {
+  try {
+    const { password } = req.headers;
+    
+    if (password !== 'Jakarta2025') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get all locations across all users
+    const locations = await new Promise((resolve, reject) => {
+      db.all(`
+        SELECT 
+          l.*,
+          u.email as user_email,
+          u.name as user_name,
+          a.account_name,
+          a.account_type
+        FROM locations l
+        LEFT JOIN users u ON l.user_id = u.user_id
+        LEFT JOIN accounts a ON l.user_id = a.user_id AND l.account_id = a.account_id
+        ORDER BY u.email, a.account_name, l.title
+      `, [], (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(rows);
+      });
+    });
+    
+    res.json({ locations, total: locations.length });
+  } catch (error) {
+    console.error('Error fetching report locations:', error);
+    res.status(500).json({ error: 'Failed to fetch report locations', details: error.message });
+  }
+});
+
+// Get statistics for reports (password protected)
+app.get('/api/reports/statistics', async (req, res) => {
+  try {
+    const { password } = req.headers;
+    
+    if (password !== 'Jakarta2025') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get various statistics
+    const stats = await new Promise((resolve, reject) => {
+      const statistics = {};
+      
+      // Total users
+      db.get('SELECT COUNT(*) as count FROM users', [], (err, row) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        statistics.totalUsers = row.count;
+        
+        // Total accounts
+        db.get('SELECT COUNT(*) as count FROM accounts', [], (err, row) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          statistics.totalAccounts = row.count;
+          
+          // Total locations
+          db.get('SELECT COUNT(*) as count FROM locations', [], (err, row) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            statistics.totalLocations = row.count;
+            
+            // Locations with outlet codes
+            db.get('SELECT COUNT(*) as count FROM locations WHERE outlet_code IS NOT NULL AND outlet_code != ""', [], (err, row) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+              statistics.locationsWithOutletCodes = row.count;
+              
+              // Locations by user
+              db.all(`
+                SELECT 
+                  u.email,
+                  u.name,
+                  COUNT(l.id) as location_count
+                FROM users u
+                LEFT JOIN locations l ON u.user_id = l.user_id
+                GROUP BY u.user_id, u.email, u.name
+                ORDER BY location_count DESC
+              `, [], (err, rows) => {
+                if (err) {
+                  reject(err);
+                  return;
+                }
+                statistics.locationsByUser = rows;
+                
+                // Recent activity (users created in last 30 days)
+                db.get(`
+                  SELECT COUNT(*) as count 
+                  FROM users 
+                  WHERE created_at >= datetime('now', '-30 days')
+                `, [], (err, row) => {
+                  if (err) {
+                    reject(err);
+                    return;
+                  }
+                  statistics.recentNewUsers = row.count;
+                  resolve(statistics);
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+    
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching report statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch report statistics', details: error.message });
+  }
+});
+
+// Export all locations to CSV (password protected)
+app.get('/api/reports/export/csv', async (req, res) => {
+  try {
+    const { password } = req.headers;
+    
+    if (password !== 'Jakarta2025') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get all locations with user information
+    const locations = await new Promise((resolve, reject) => {
+      db.all(`
+        SELECT 
+          u.email as user_email,
+          u.name as user_name,
+          a.account_name,
+          a.account_type,
+          l.account_id,
+          l.location_id,
+          l.location_name,
+          l.title,
+          l.address,
+          l.outlet_code,
+          l.maps_uri,
+          l.new_review_uri,
+          l.created_at,
+          l.updated_at
+        FROM locations l
+        LEFT JOIN users u ON l.user_id = u.user_id
+        LEFT JOIN accounts a ON l.user_id = a.user_id AND l.account_id = a.account_id
+        ORDER BY u.email, a.account_name, l.title
+      `, [], (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(rows);
+      });
+    });
+    
+    if (!locations || locations.length === 0) {
+      return res.status(404).json({ error: 'No locations found for export' });
+    }
+
+    // Create CSV content with comprehensive headers
+    const csvHeaders = [
+      'User Email', 'User Name', 'Account Name', 'Account Type', 'Account ID', 
+      'Location ID', 'Location Name', 'Title', 'Address', 'Outlet Code',
+      'Maps URI', 'Review URI', 'Created At', 'Updated At'
+    ];
+    
+    const csvRows = locations.map(location => [
+      location.user_email || '',
+      location.user_name || '',
+      location.account_name || '',
+      location.account_type || '',
+      location.account_id || '',
+      location.location_id || '',
+      location.location_name || '',
+      location.title || '',
+      location.address || '',
+      location.outlet_code || '',
+      location.maps_uri || '',
+      location.new_review_uri || '',
+      location.created_at || '',
+      location.updated_at || ''
+    ]);
+    
+    const csvContent = [csvHeaders, ...csvRows]
+      .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="all_locations_report_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csvContent);
+  } catch (error) {
+    console.error('Error exporting report CSV:', error);
+    res.status(500).json({ error: 'Failed to export report CSV', details: error.message });
   }
 });
 

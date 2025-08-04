@@ -63,6 +63,7 @@ Configure these in your backend environment:
 - `GOOGLE_CLIENT_ID` - Your Google OAuth client ID
 - `GOOGLE_CLIENT_SECRET` - Your Google OAuth client secret
 - `REDIRECT_URI` - OAuth redirect URI (default: http://localhost:8011/auth/google/callback)
+- `FRONTEND_URL` - Frontend URL for OAuth redirects (default: http://localhost:3000)
 - `PORT` - Server port (default: 8011)
 
 ## Production Deployment

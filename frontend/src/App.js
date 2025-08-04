@@ -19,6 +19,13 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [autoFetched, setAutoFetched] = useState(false);
+  
+  // Report page state
+  const [showReports, setShowReports] = useState(false);
+  const [reportPassword, setReportPassword] = useState('');
+  const [reportAuthenticated, setReportAuthenticated] = useState(false);
+  const [reportData, setReportData] = useState({ locations: [], statistics: {} });
+  const [reportLoading, setReportLoading] = useState(false);
 
   // OAuth 2.0 Functions
   useEffect(() => {
@@ -677,10 +684,124 @@ function App() {
     }
   };
 
+  // Report Functions
+  const handleReportPasswordSubmit = async () => {
+    if (!reportPassword) {
+      setError('Please enter the report password');
+      return;
+    }
+
+    setReportLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/reports/authenticate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password: reportPassword }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setReportAuthenticated(true);
+        setReportPassword('');
+        await loadReportData();
+      } else {
+        setError('Invalid password');
+        setReportPassword('');
+      }
+    } catch (error) {
+      console.error('Error authenticating report access:', error);
+      setError('Error authenticating: ' + error.message);
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const loadReportData = async () => {
+    if (!reportAuthenticated) return;
+
+    setReportLoading(true);
+    
+    try {
+      // Fetch locations and statistics in parallel
+      const [locationsResponse, statisticsResponse] = await Promise.all([
+        fetch('/api/reports/locations', {
+          headers: { password: 'Jakarta2025' }
+        }),
+        fetch('/api/reports/statistics', {
+          headers: { password: 'Jakarta2025' }
+        })
+      ]);
+
+      const locationsData = await locationsResponse.json();
+      const statisticsData = await statisticsResponse.json();
+
+      setReportData({
+        locations: locationsData.locations || [],
+        statistics: statisticsData
+      });
+    } catch (error) {
+      console.error('Error loading report data:', error);
+      setError('Error loading report data: ' + error.message);
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const handleExportCSV = async () => {
+    if (!reportAuthenticated) return;
+
+    try {
+      const response = await fetch('/api/reports/export/csv', {
+        headers: { password: 'Jakarta2025' }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to export CSV');
+      }
+
+      // Create blob and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `all_locations_report_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      setError('Error exporting CSV: ' + error.message);
+    }
+  };
+
+  const toggleReportsView = () => {
+    setShowReports(!showReports);
+    if (!showReports && reportAuthenticated) {
+      loadReportData();
+    }
+  };
+
   return (
     <div className="App">
       <div className="container">
-        <h1>Google Business Profile Review Manager</h1>
+        <div className="header-section">
+          <h1>Google Business Profile Review Manager</h1>
+          <div className="navigation">
+            <button 
+              onClick={toggleReportsView} 
+              className={`nav-button ${showReports ? 'active' : ''}`}
+            >
+              📊 {showReports ? 'Back to Main' : 'Reports'}
+            </button>
+          </div>
+        </div>
         
         {error && (
           <div className={`message ${error.includes('successfully') || error.includes('✅') ? 'success' : 'error'}`}>
@@ -689,9 +810,163 @@ function App() {
         )}
         
         {loading && <div className="loading">Loading...</div>}
+        {reportLoading && <div className="loading">Loading report data...</div>}
 
-        {/* User Selection Section */}
-        {allUsers.length > 1 && (
+        {/* Reports Section */}
+        {showReports ? (
+          <div className="reports-container">
+            {!reportAuthenticated ? (
+              <div className="section">
+                <h2>🔐 Report Access</h2>
+                <p>Enter the password to access comprehensive reports and statistics.</p>
+                <div className="input-group">
+                  <input
+                    type="password"
+                    value={reportPassword}
+                    onChange={(e) => setReportPassword(e.target.value)}
+                    placeholder="Enter report password"
+                    className="password-input"
+                    onKeyPress={(e) => e.key === 'Enter' && handleReportPasswordSubmit()}
+                  />
+                  <button 
+                    onClick={handleReportPasswordSubmit}
+                    disabled={reportLoading || !reportPassword}
+                    className="password-submit-button"
+                  >
+                    {reportLoading ? 'Authenticating...' : 'Access Reports'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="reports-content">
+                <div className="section">
+                  <div className="reports-header">
+                    <h2>📊 System Reports & Statistics</h2>
+                    <button 
+                      onClick={handleExportCSV}
+                      className="export-button"
+                      disabled={reportLoading}
+                    >
+                      📄 Export All Data to CSV
+                    </button>
+                  </div>
+                  
+                  {/* Statistics Cards */}
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <h3>👥 Total Users</h3>
+                      <div className="stat-number">{reportData.statistics.totalUsers || 0}</div>
+                    </div>
+                    <div className="stat-card">
+                      <h3>🏢 Total Accounts</h3>
+                      <div className="stat-number">{reportData.statistics.totalAccounts || 0}</div>
+                    </div>
+                    <div className="stat-card">
+                      <h3>📍 Total Locations</h3>
+                      <div className="stat-number">{reportData.statistics.totalLocations || 0}</div>
+                    </div>
+                    <div className="stat-card">
+                      <h3>🏷️ With Outlet Codes</h3>
+                      <div className="stat-number">{reportData.statistics.locationsWithOutletCodes || 0}</div>
+                    </div>
+                    <div className="stat-card">
+                      <h3>🆕 New Users (30 days)</h3>
+                      <div className="stat-number">{reportData.statistics.recentNewUsers || 0}</div>
+                    </div>
+                  </div>
+
+                  {/* Locations by User */}
+                  {reportData.statistics.locationsByUser && reportData.statistics.locationsByUser.length > 0 && (
+                    <div className="user-stats-section">
+                      <h3>📊 Locations by User</h3>
+                      <div className="user-stats-table">
+                        <table className="stats-table">
+                          <thead>
+                            <tr>
+                              <th>User</th>
+                              <th>Email</th>
+                              <th>Location Count</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reportData.statistics.locationsByUser.map((user, index) => (
+                              <tr key={index}>
+                                <td>{user.name || 'N/A'}</td>
+                                <td>{user.email}</td>
+                                <td className="stat-number">{user.location_count}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* All Locations Table */}
+                  <div className="all-locations-section">
+                    <h3>🗺️ All Locations ({reportData.locations.length})</h3>
+                    <div className="locations-table-container">
+                      <table className="locations-table">
+                        <thead>
+                          <tr>
+                            <th>User</th>
+                            <th>Account</th>
+                            <th>Location Name</th>
+                            <th>Address</th>
+                            <th>Outlet Code</th>
+                            <th>Maps</th>
+                            <th>Reviews</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reportData.locations.map((location, index) => (
+                            <tr key={index}>
+                              <td className="user-info">
+                                <div>{location.user_name || 'N/A'}</div>
+                                <div className="user-email">{location.user_email}</div>
+                              </td>
+                              <td>{location.account_name || 'N/A'}</td>
+                              <td>{location.title || 'N/A'}</td>
+                              <td>{location.address || 'N/A'}</td>
+                              <td>{location.outlet_code || 'N/A'}</td>
+                              <td>
+                                {location.maps_uri ? (
+                                  <a 
+                                    href={location.maps_uri} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="uri-link small"
+                                  >
+                                    📍
+                                  </a>
+                                ) : 'N/A'}
+                              </td>
+                              <td>
+                                {location.new_review_uri ? (
+                                  <a 
+                                    href={location.new_review_uri} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="uri-link small"
+                                  >
+                                    ⭐
+                                  </a>
+                                ) : 'N/A'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* User Selection Section */}
+            {allUsers.length > 1 && (
           <div className="section">
             <h2>Select User Account</h2>
             <div className="user-selection">
@@ -853,6 +1128,8 @@ function App() {
                     <th>Account Name</th>
                     <th>Location Name</th>
                     <th>Address</th>
+                    <th>Maps URI</th>
+                    <th>Review URI</th>
                     <th>Outlet Code</th>
                     <th>Actions</th>
                   </tr>
@@ -869,6 +1146,36 @@ function App() {
                         <td>{location.account_name || 'N/A'}</td>
                         <td>{location.title || 'N/A'}</td>
                         <td>{location.address || 'N/A'}</td>
+                        <td>
+                          {location.maps_uri ? (
+                            <a 
+                              href={location.maps_uri} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="uri-link"
+                              title="Open in Google Maps"
+                            >
+                              📍 Maps
+                            </a>
+                          ) : (
+                            'N/A'
+                          )}
+                        </td>
+                        <td>
+                          {location.new_review_uri ? (
+                            <a 
+                              href={location.new_review_uri} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="uri-link"
+                              title="Write a review"
+                            >
+                              ⭐ Review
+                            </a>
+                          ) : (
+                            'N/A'
+                          )}
+                        </td>
                         <td>
                           <input
                             type="text"
@@ -962,6 +1269,8 @@ function App() {
           <div className="section">
             <p>No reviews found for this location.</p>
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

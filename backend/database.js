@@ -87,11 +87,28 @@ const initDatabase = () => {
         db.run(`ALTER TABLE locations ADD COLUMN outlet_code TEXT`, (err) => {
           if (err && !err.message.includes('duplicate column name')) {
             console.error('Error adding outlet_code column:', err);
-            // Don't reject here as the column might already exist
           } else if (!err) {
             console.log('Added outlet_code column to locations table');
           }
-          resolve();
+          
+          // Migration: Add mapsUri column if it doesn't exist
+          db.run(`ALTER TABLE locations ADD COLUMN maps_uri TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding maps_uri column:', err);
+            } else if (!err) {
+              console.log('Added maps_uri column to locations table');
+            }
+            
+            // Migration: Add newReviewUri column if it doesn't exist
+            db.run(`ALTER TABLE locations ADD COLUMN new_review_uri TEXT`, (err) => {
+              if (err && !err.message.includes('duplicate column name')) {
+                console.error('Error adding new_review_uri column:', err);
+              } else if (!err) {
+                console.log('Added new_review_uri column to locations table');
+              }
+              resolve();
+            });
+          });
         });
       });
     });
@@ -248,13 +265,17 @@ const saveLocations = (userId, accountId, locations) => {
       }
 
       // Insert new locations
-      const stmt = db.prepare('INSERT OR REPLACE INTO locations (user_id, account_id, location_id, location_name, title, address, outlet_code) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      const stmt = db.prepare('INSERT OR REPLACE INTO locations (user_id, account_id, location_id, location_name, title, address, outlet_code, maps_uri, new_review_uri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
       
       locations.forEach(location => {
         const address = location.storefrontAddress ? 
           `${location.storefrontAddress.locality || ''}, ${location.storefrontAddress.administrativeArea || ''}`.trim() : '';
         
-        stmt.run([userId, accountId, location.name, location.name, location.title, address, location.outlet_code || null]);
+        // Extract URIs from metadata
+        const mapsUri = location.metadata?.mapsUri || null;
+        const newReviewUri = location.metadata?.newReviewUri || null;
+        
+        stmt.run([userId, accountId, location.name, location.name, location.title, address, location.outlet_code || null, mapsUri, newReviewUri]);
       });
       
       stmt.finalize((err) => {
